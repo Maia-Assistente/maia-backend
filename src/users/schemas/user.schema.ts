@@ -12,7 +12,8 @@ export enum UserStatus {
 export enum Gender {
   MALE = 'male',
   FEMALE = 'female',
-  OTHER = 'other'
+  OTHER = 'other',
+  PREFER_NOT_TO_SAY = 'prefer_not_to_say'
 }
 
 @Schema({ timestamps: true })
