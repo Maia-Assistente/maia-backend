@@ -1,10 +1,12 @@
+// src/receivables/receivables.service.ts
 import {
   Injectable,
   NotFoundException,
-  ConflictException
+  ConflictException,
+  ForbiddenException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Receivable, ReceivableDocument } from './schemas/receivable.schema';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
@@ -16,9 +18,15 @@ export class ReceivablesService {
     private receivableModel: Model<ReceivableDocument>
   ) {}
 
-  async create(createReceivableDto: CreateReceivableDto): Promise<Receivable> {
+  async create(
+    userId: string,
+    createReceivableDto: CreateReceivableDto
+  ): Promise<Receivable> {
     try {
-      const createdReceivable = new this.receivableModel(createReceivableDto);
+      const createdReceivable = new this.receivableModel({
+        ...createReceivableDto,
+        userId
+      });
       return await createdReceivable.save();
     } catch (error) {
       if (error.code === 11000) {
@@ -30,83 +38,74 @@ export class ReceivablesService {
     }
   }
 
-  async findAll(): Promise<Receivable[]> {
-    return this.receivableModel.find().exec();
+  async findByUserId(userId: string): Promise<Receivable[]> {
+    return this.receivableModel.find({ userId }).exec();
   }
 
-  async findOne(id: string): Promise<Receivable> {
+  async findOne(userId: string, id: string): Promise<Receivable> {
     const receivable = await this.receivableModel.findById(id).exec();
+
     if (!receivable) {
       throw new NotFoundException(`Receivable with ID ${id} not found`);
     }
+
+    // Check if the receivable belongs to the user
+    if (receivable.userId.toString() !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to access this receivable'
+      );
+    }
+
     return receivable;
   }
 
-  async findByUserNsAndToken(
-    user_ns: string,
-    token_talkbi: string
-  ): Promise<Receivable[]> {
-    return this.receivableModel.find({ user_ns, token_talkbi }).exec();
-  }
-
-  async findByUserNsTokenAndCategory(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndCategory(
+    userId: string,
     category: string
   ): Promise<Receivable[]> {
-    return this.receivableModel
-      .find({ user_ns, token_talkbi, category })
-      .exec();
+    return this.receivableModel.find({ userId, category }).exec();
   }
 
-  async findByUserNsTokenAndPaidStatus(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndPaidStatus(
+    userId: string,
     paid_status: string
   ): Promise<Receivable[]> {
-    return this.receivableModel
-      .find({ user_ns, token_talkbi, paid_status })
-      .exec();
+    return this.receivableModel.find({ userId, paid_status }).exec();
   }
 
-  async findByUserNsTokenAndDateRange(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndDateRange(
+    userId: string,
     startDate: string,
     endDate: string
   ): Promise<Receivable[]> {
     return this.receivableModel
       .find({
-        user_ns,
-        token_talkbi,
+        userId,
         due_date: { $gte: startDate, $lte: endDate }
       })
       .exec();
   }
 
-  async findByUserNsTokenAndYearMonth(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndYearMonth(
+    userId: string,
     year: string,
     month: string
   ): Promise<Receivable[]> {
-    return this.receivableModel
-      .find({ user_ns, token_talkbi, year, month })
-      .exec();
+    return this.receivableModel.find({ userId, year, month }).exec();
   }
 
   async update(
+    userId: string,
     id: string,
     updateReceivableDto: UpdateReceivableDto
   ): Promise<Receivable> {
     try {
+      // First check if receivable exists and belongs to user
+      const existingReceivable = await this.findOne(userId, id);
+
       const updatedReceivable = await this.receivableModel
         .findByIdAndUpdate(id, updateReceivableDto, { new: true })
         .exec();
-
-      if (!updatedReceivable) {
-        throw new NotFoundException(`Receivable with ID ${id} not found`);
-      }
 
       return updatedReceivable;
     } catch (error) {
@@ -119,20 +118,17 @@ export class ReceivablesService {
     }
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.receivableModel.findByIdAndDelete(id).exec();
-    if (!result) {
-      throw new NotFoundException(`Receivable with ID ${id} not found`);
-    }
+  async remove(userId: string, id: string): Promise<void> {
+    // First check if receivable exists and belongs to user
+    await this.findOne(userId, id);
+
+    await this.receivableModel.findByIdAndDelete(id).exec();
   }
 
-  async getTotalAmountByUserNsAndToken(
-    user_ns: string,
-    token_talkbi: string
-  ): Promise<number> {
+  async getTotalAmountByUserId(userId: string): Promise<number> {
     const result = await this.receivableModel
       .aggregate([
-        { $match: { user_ns, token_talkbi } },
+        { $match: { userId: new Types.ObjectId(userId) } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
       .exec();
@@ -140,14 +136,18 @@ export class ReceivablesService {
     return result.length > 0 ? result[0].total : 0;
   }
 
-  async getTotalAmountByUserNsTokenAndPaidStatus(
-    user_ns: string,
-    token_talkbi: string,
+  async getTotalAmountByUserIdAndPaidStatus(
+    userId: string,
     paid_status: string
   ): Promise<number> {
     const result = await this.receivableModel
       .aggregate([
-        { $match: { user_ns, token_talkbi, paid_status } },
+        {
+          $match: {
+            userId: new Types.ObjectId(userId),
+            paid_status
+          }
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
       .exec();

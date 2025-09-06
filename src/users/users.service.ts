@@ -1,3 +1,4 @@
+// src/users/users.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -21,11 +22,16 @@ export class UsersService {
         ...createUserDto,
         password: hashedPassword
       });
-      return await createdUser.save();
+      const savedUser = await createdUser.save();
+
+      // Remove password from response
+      const userObject = savedUser.toObject();
+      delete userObject.password;
+      return userObject;
     } catch (error) {
       if (error.code === 11000) {
         throw new ConflictException(
-          'User with this email, CPF, or user_ns/token_talkbi combination already exists'
+          'User with this email or CPF already exists'
         );
       }
       throw error;
@@ -36,7 +42,7 @@ export class UsersService {
     return this.userModel.find().select('-password').exec();
   }
 
-  async findOne(id: string): Promise<User> {
+  async findOne(id: string): Promise<UserDocument> {
     const user = await this.userModel.findById(id).select('-password').exec();
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -46,16 +52,6 @@ export class UsersService {
 
   async findByEmail(email: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ email }).exec();
-  }
-
-  async findByUserNsAndToken(
-    user_ns: string,
-    token_talkbi: string
-  ): Promise<User | null> {
-    return this.userModel
-      .findOne({ user_ns, token_talkbi })
-      .select('-password')
-      .exec();
   }
 
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
@@ -73,7 +69,7 @@ export class UsersService {
     } catch (error) {
       if (error.code === 11000) {
         throw new ConflictException(
-          'User with this email, CPF, or user_ns/token_talkbi combination already exists'
+          'User with this email or CPF already exists'
         );
       }
       throw error;
@@ -90,7 +86,6 @@ export class UsersService {
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.findByEmail(email);
     if (user && (await bcrypt.compare(password, user.password))) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { password, ...result } = user.toObject();
       return result;
     }

@@ -1,3 +1,4 @@
+// src/users/schemas/user.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
@@ -39,17 +40,8 @@ export class User {
   @Prop({ enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
 
-  @Prop({ required: true })
-  user_ns: string;
-
-  @Prop({ required: true })
-  token_talkbi: string;
-
   @Prop({ enum: Gender, required: true })
   gender: Gender;
 }
 
 export const UsersSchema = SchemaFactory.createForClass(User);
-
-// Create compound index for [user_ns, token_talkbi]
-UsersSchema.index({ user_ns: 1, token_talkbi: 1 }, { unique: true });

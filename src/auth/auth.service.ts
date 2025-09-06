@@ -37,6 +37,15 @@ export class AuthService {
   }
 
   async validateUser(payload: any) {
-    return await this.userService.findOne(payload.sub);
+    const user = await this.userService.findOne(payload.sub);
+    if (!user) {
+      return null;
+    }
+
+    // Retorna o payload no formato esperado pelo UserPayload
+    return {
+      sub: user._id.toString(),
+      email: user.email
+    };
   }
 }

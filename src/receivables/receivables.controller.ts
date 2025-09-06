@@ -1,3 +1,4 @@
+// src/receivables/receivables.controller.ts
 import {
   Controller,
   Get,
@@ -10,163 +11,140 @@ import {
   Query,
   NotFoundException
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
+  ApiBody
+} from '@nestjs/swagger';
 import { ReceivablesService } from './receivables.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  UserPayload
+} from '../auth/decorators/current-user.decorator';
 
 @Controller('receivables')
 @UseGuards(JwtAuthGuard)
+@ApiTags('Receivables')
+@ApiBearerAuth('JWT-auth')
 export class ReceivablesController {
   constructor(private readonly receivablesService: ReceivablesService) {}
 
   @Post()
-  create(@Body() createReceivableDto: CreateReceivableDto) {
-    return this.receivablesService.create(createReceivableDto);
+  @ApiOperation({ summary: 'Criar uma nova conta a receber' })
+  @ApiBody({ type: CreateReceivableDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Conta a receber criada com sucesso'
+  })
+  @ApiResponse({ status: 400, description: 'Dados inválidos fornecidos' })
+  @ApiResponse({ status: 401, description: 'Token de autenticação inválido' })
+  create(
+    @CurrentUser() user: UserPayload,
+    @Body() createReceivableDto: CreateReceivableDto
+  ) {
+    return this.receivablesService.create(user.sub, createReceivableDto);
   }
 
   @Get()
-  findAll() {
-    return this.receivablesService.findAll();
+  findAll(@CurrentUser() user: UserPayload) {
+    return this.receivablesService.findByUserId(user.sub);
   }
 
-  @Get('search')
-  async findByUserNsAndToken(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string
-  ) {
-    if (!user_ns || !token_talkbi) {
-      throw new NotFoundException('user_ns and token_talkbi are required');
-    }
-    return this.receivablesService.findByUserNsAndToken(user_ns, token_talkbi);
-  }
-
-  @Get('search/category')
+  @Get('category/:category')
   async findByCategory(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string,
-    @Query('category') category: string
+    @CurrentUser() user: UserPayload,
+    @Param('category') category: string
   ) {
-    if (!user_ns || !token_talkbi || !category) {
-      throw new NotFoundException(
-        'user_ns, token_talkbi and category are required'
-      );
-    }
-    return this.receivablesService.findByUserNsTokenAndCategory(
-      user_ns,
-      token_talkbi,
-      category
-    );
+    return this.receivablesService.findByUserIdAndCategory(user.sub, category);
   }
 
-  @Get('search/paid-status')
+  @Get('paid-status/:status')
   async findByPaidStatus(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string,
-    @Query('paid_status') paid_status: string
+    @CurrentUser() user: UserPayload,
+    @Param('status') paid_status: string
   ) {
-    if (!user_ns || !token_talkbi || !paid_status) {
-      throw new NotFoundException(
-        'user_ns, token_talkbi and paid_status are required'
-      );
-    }
-    return this.receivablesService.findByUserNsTokenAndPaidStatus(
-      user_ns,
-      token_talkbi,
+    return this.receivablesService.findByUserIdAndPaidStatus(
+      user.sub,
       paid_status
     );
   }
 
-  @Get('search/date-range')
+  @Get('date-range')
   async findByDateRange(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string,
+    @CurrentUser() user: UserPayload,
     @Query('start_date') start_date: string,
     @Query('end_date') end_date: string
   ) {
-    if (!user_ns || !token_talkbi || !start_date || !end_date) {
-      throw new NotFoundException(
-        'user_ns, token_talkbi, start_date and end_date are required'
-      );
+    if (!start_date || !end_date) {
+      throw new NotFoundException('start_date and end_date are required');
     }
-    return this.receivablesService.findByUserNsTokenAndDateRange(
-      user_ns,
-      token_talkbi,
+    return this.receivablesService.findByUserIdAndDateRange(
+      user.sub,
       start_date,
       end_date
     );
   }
 
-  @Get('search/year-month')
+  @Get('year-month')
   async findByYearMonth(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string,
+    @CurrentUser() user: UserPayload,
     @Query('year') year: string,
     @Query('month') month: string
   ) {
-    if (!user_ns || !token_talkbi || !year || !month) {
-      throw new NotFoundException(
-        'user_ns, token_talkbi, year and month are required'
-      );
+    if (!year || !month) {
+      throw new NotFoundException('year and month are required');
     }
-    return this.receivablesService.findByUserNsTokenAndYearMonth(
-      user_ns,
-      token_talkbi,
+    return this.receivablesService.findByUserIdAndYearMonth(
+      user.sub,
       year,
       month
     );
   }
 
   @Get('total')
-  async getTotalAmount(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string
-  ) {
-    if (!user_ns || !token_talkbi) {
-      throw new NotFoundException('user_ns and token_talkbi are required');
-    }
-    const total = await this.receivablesService.getTotalAmountByUserNsAndToken(
-      user_ns,
-      token_talkbi
+  async getTotalAmount(@CurrentUser() user: UserPayload) {
+    const total = await this.receivablesService.getTotalAmountByUserId(
+      user.sub
     );
     return { total };
   }
 
-  @Get('total/paid-status')
+  @Get('total/paid-status/:status')
   async getTotalAmountByPaidStatus(
-    @Query('user_ns') user_ns: string,
-    @Query('token_talkbi') token_talkbi: string,
-    @Query('paid_status') paid_status: string
+    @CurrentUser() user: UserPayload,
+    @Param('status') paid_status: string
   ) {
-    if (!user_ns || !token_talkbi || !paid_status) {
-      throw new NotFoundException(
-        'user_ns, token_talkbi and paid_status are required'
-      );
-    }
     const total =
-      await this.receivablesService.getTotalAmountByUserNsTokenAndPaidStatus(
-        user_ns,
-        token_talkbi,
+      await this.receivablesService.getTotalAmountByUserIdAndPaidStatus(
+        user.sub,
         paid_status
       );
     return { total };
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.receivablesService.findOne(id);
+  findOne(@CurrentUser() user: UserPayload, @Param('id') id: string) {
+    return this.receivablesService.findOne(user.sub, id);
   }
 
   @Patch(':id')
   update(
+    @CurrentUser() user: UserPayload,
     @Param('id') id: string,
     @Body() updateReceivableDto: UpdateReceivableDto
   ) {
-    return this.receivablesService.update(id, updateReceivableDto);
+    return this.receivablesService.update(user.sub, id, updateReceivableDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.receivablesService.remove(id);
+  remove(@CurrentUser() user: UserPayload, @Param('id') id: string) {
+    return this.receivablesService.remove(user.sub, id);
   }
 }

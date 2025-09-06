@@ -1,4 +1,4 @@
-// create-receivable.dto.ts
+// src/receivables/dto/create-receivable.dto.ts
 import {
   IsString,
   IsNumber,
@@ -11,13 +11,7 @@ import {
 import { PaymentMethod } from '../schemas/receivable.schema';
 
 export class CreateReceivableDto {
-  @IsNotEmpty()
-  @IsString()
-  user_ns: string;
-
-  @IsNotEmpty()
-  @IsString()
-  token_talkbi: string;
+  // userId será adicionado automaticamente do JWT token no controller
 
   @IsNotEmpty()
   @IsString()
@@ -80,3 +74,5 @@ export class CreateReceivableDto {
   @IsString()
   type: string;
 }
+
+// src/receivables/dto/update-receivable.dto.ts

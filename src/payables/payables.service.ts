@@ -1,7 +1,9 @@
 import {
   Injectable,
   NotFoundException,
-  ConflictException
+  ConflictException,
+  ForbiddenException,
+  Logger
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -11,16 +13,35 @@ import { UpdatePayableDto } from './dto/update-payable.dto';
 
 @Injectable()
 export class PayablesService {
+  private readonly logger = new Logger(PayablesService.name);
+
   constructor(
     @InjectModel(Payable.name)
     private payableModel: Model<PayableDocument>
   ) {}
 
-  async create(createPayableDto: CreatePayableDto): Promise<Payable> {
+  async create(
+    userId: string,
+    createPayableDto: CreatePayableDto
+  ): Promise<Payable> {
     try {
-      const createdPayable = new this.payableModel(createPayableDto);
-      return await createdPayable.save();
+      this.logger.log(`Creating payable for userId: ${userId}`);
+      this.logger.log(`Data to create: ${JSON.stringify(createPayableDto)}`);
+
+      const createdPayable = new this.payableModel({
+        ...createPayableDto,
+        userId
+      });
+
+      this.logger.log(`Payable model created, attempting to save...`);
+      const savedPayable = await createdPayable.save();
+      this.logger.log(`Payable saved successfully`);
+
+      return savedPayable;
     } catch (error) {
+      this.logger.error(`Error in PayablesService.create: ${error.message}`);
+      this.logger.error(`Error stack: ${error.stack}`);
+
       if (error.code === 11000) {
         throw new ConflictException(
           'Payable with this combination already exists'
@@ -30,81 +51,74 @@ export class PayablesService {
     }
   }
 
-  async findAll(): Promise<Payable[]> {
-    return this.payableModel.find().exec();
+  async findByUserId(userId: string): Promise<Payable[]> {
+    return this.payableModel.find({ userId }).exec();
   }
 
-  async findOne(id: string): Promise<Payable> {
+  async findOne(userId: string, id: string): Promise<Payable> {
     const payable = await this.payableModel.findById(id).exec();
+
     if (!payable) {
       throw new NotFoundException(`Payable with ID ${id} not found`);
     }
+
+    // Check if the payable belongs to the user
+    if (payable.userId.toString() !== userId) {
+      throw new ForbiddenException(
+        'You do not have permission to access this payable'
+      );
+    }
+
     return payable;
   }
 
-  async findByUserNsAndToken(
-    user_ns: string,
-    token_talkbi: string
-  ): Promise<Payable[]> {
-    return this.payableModel.find({ user_ns, token_talkbi }).exec();
-  }
-
-  async findByUserNsTokenAndCategory(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndCategory(
+    userId: string,
     category: string
   ): Promise<Payable[]> {
-    return this.payableModel.find({ user_ns, token_talkbi, category }).exec();
+    return this.payableModel.find({ userId, category }).exec();
   }
 
-  async findByUserNsTokenAndPaidStatus(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndPaidStatus(
+    userId: string,
     paid_status: string
   ): Promise<Payable[]> {
-    return this.payableModel
-      .find({ user_ns, token_talkbi, paid_status })
-      .exec();
+    return this.payableModel.find({ userId, paid_status }).exec();
   }
 
-  async findByUserNsTokenAndDateRange(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndDateRange(
+    userId: string,
     startDate: string,
     endDate: string
   ): Promise<Payable[]> {
     return this.payableModel
       .find({
-        user_ns,
-        token_talkbi,
+        userId,
         due_date: { $gte: startDate, $lte: endDate }
       })
       .exec();
   }
 
-  async findByUserNsTokenAndYearMonth(
-    user_ns: string,
-    token_talkbi: string,
+  async findByUserIdAndYearMonth(
+    userId: string,
     year: string,
     month: string
   ): Promise<Payable[]> {
-    return this.payableModel
-      .find({ user_ns, token_talkbi, year, month })
-      .exec();
+    return this.payableModel.find({ userId, year, month }).exec();
   }
 
   async update(
+    userId: string,
     id: string,
     updatePayableDto: UpdatePayableDto
   ): Promise<Payable> {
     try {
+      // First check if payable exists and belongs to user
+      const existingPayable = await this.findOne(userId, id);
+
       const updatedPayable = await this.payableModel
         .findByIdAndUpdate(id, updatePayableDto, { new: true })
         .exec();
-
-      if (!updatedPayable) {
-        throw new NotFoundException(`Payable with ID ${id} not found`);
-      }
 
       return updatedPayable;
     } catch (error) {
@@ -117,20 +131,17 @@ export class PayablesService {
     }
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.payableModel.findByIdAndDelete(id).exec();
-    if (!result) {
-      throw new NotFoundException(`Payable with ID ${id} not found`);
-    }
+  async remove(userId: string, id: string): Promise<void> {
+    // First check if payable exists and belongs to user
+    await this.findOne(userId, id);
+
+    await this.payableModel.findByIdAndDelete(id).exec();
   }
 
-  async getTotalAmountByUserNsAndToken(
-    user_ns: string,
-    token_talkbi: string
-  ): Promise<number> {
+  async getTotalAmountByUserId(userId: string): Promise<number> {
     const result = await this.payableModel
       .aggregate([
-        { $match: { user_ns, token_talkbi } },
+        { $match: { userId: new Types.ObjectId(userId) } },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
       .exec();
@@ -138,14 +149,18 @@ export class PayablesService {
     return result.length > 0 ? result[0].total : 0;
   }
 
-  async getTotalAmountByUserNsTokenAndPaidStatus(
-    user_ns: string,
-    token_talkbi: string,
+  async getTotalAmountByUserIdAndPaidStatus(
+    userId: string,
     paid_status: string
   ): Promise<number> {
     const result = await this.payableModel
       .aggregate([
-        { $match: { user_ns, token_talkbi, paid_status } },
+        {
+          $match: {
+            userId: new Types.ObjectId(userId),
+            paid_status
+          }
+        },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ])
       .exec();
@@ -153,3 +168,6 @@ export class PayablesService {
     return result.length > 0 ? result[0].total : 0;
   }
 }
+
+// Import Types from mongoose
+import { Types } from 'mongoose';

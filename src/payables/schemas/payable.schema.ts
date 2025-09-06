@@ -1,5 +1,7 @@
+// src/payables/schemas/payable.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Schema as MongooseSchema } from 'mongoose';
+import { User } from '../../users/schemas/user.schema';
 
 export type PayableDocument = Payable & Document;
 
@@ -11,11 +13,8 @@ export enum PaymentMethod {
 
 @Schema({ timestamps: true })
 export class Payable {
-  @Prop({ required: true })
-  user_ns: string;
-
-  @Prop({ required: true })
-  token_talkbi: string;
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
+  userId: User;
 
   @Prop({ required: true })
   year: string;
@@ -65,5 +64,8 @@ export class Payable {
 
 export const PayableSchema = SchemaFactory.createForClass(Payable);
 
-// Create compound index for [user_ns, token_talkbi]
-PayableSchema.index({ user_ns: 1, token_talkbi: 1 });
+// Create index for userId for better query performance
+PayableSchema.index({ userId: 1 });
+PayableSchema.index({ userId: 1, due_date: 1 });
+PayableSchema.index({ userId: 1, category: 1 });
+PayableSchema.index({ userId: 1, paid_status: 1 });
